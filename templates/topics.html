@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Topics — Conference Meditation{% endblock %}
+{% block content %}
+<div class="topics-page">
+  <div class="page-header">
+    <h2 class="page-title">Topics</h2>
+    <p class="page-sub">Topics are the filters that drive YouTube search. Add any keyword, product name, or concept you follow.</p>
+  </div>
+
+  <div class="topic-list" id="topicList">
+    {% for topic in topics %}
+    <div class="topic-row" id="topic-{{ topic.id }}">
+      <div class="topic-row-main">
+        <span class="topic-row-name">{{ topic.name }}</span>
+        <span class="topic-row-query">search: "{{ topic.search_query }}"</span>
+      </div>
+      <div class="topic-row-actions">
+        <button class="btn btn-sm" onclick="togglePins({{ topic.id }})">Pins</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteTopic({{ topic.id }})">Delete</button>
+      </div>
+      <div class="pins-drawer" id="pins-{{ topic.id }}" style="display:none">
+        <div class="pins-list" id="pinlist-{{ topic.id }}"></div>
+        <div class="pin-add-row">
+          <input type="text" class="search-input" id="pinurl-{{ topic.id }}" placeholder="YouTube URL">
+          <input type="text" class="search-input" id="pintitle-{{ topic.id }}" placeholder="Title">
+          <button class="btn btn-sm" onclick="addPin({{ topic.id }})">Add Pin</button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="add-topic-form">
+    <h3 class="form-title">Add Topic</h3>
+    <div class="form-row">
+      <input type="text" id="newName" class="search-input" placeholder="Topic name (e.g. Nexthink)">
+      <input type="text" id="newQuery" class="search-input" placeholder="Search query (defaults to name)">
+      <button class="btn btn-primary" onclick="addTopic()">Add Topic</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function togglePins(topicId) {
+    const drawer = document.getElementById(`pins-${topicId}`);
+    const visible = drawer.style.display !== 'none';
+    drawer.style.display = visible ? 'none' : 'block';
+    if (!visible) loadPins(topicId);
+  }
+
+  function loadPins(topicId) {
+    fetch(`/api/topics/${topicId}/pins`)
+      .then(r => r.json())
+      .then(pins => {
+        const el = document.getElementById(`pinlist-${topicId}`);
+        if (pins.length === 0) { el.innerHTML = '<p class="empty-hint">No pins yet.</p>'; return; }
+        el.innerHTML = pins.map(p => `
+          <div class="pin-item">
+            <img src="https://img.youtube.com/vi/${p.video_id}/default.jpg" class="pin-thumb">
+            <span class="pin-title">${p.title}</span>
+            <button class="btn btn-sm btn-danger" onclick="deletePin(${p.id}, ${topicId})">✕</button>
+          </div>`).join('');
+      });
+  }
+
+  function addPin(topicId) {
+    const url = document.getElementById(`pinurl-${topicId}`).value.trim();
+    const title = document.getElementById(`pintitle-${topicId}`).value.trim() || 'Pinned Video';
+    if (!url) return;
+    fetch(`/api/topics/${topicId}/pins`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title })
+    }).then(() => {
+      loadPins(topicId);
+      document.getElementById(`pinurl-${topicId}`).value = '';
+      document.getElementById(`pintitle-${topicId}`).value = '';
+    });
+  }
+
+  function deletePin(pinId, topicId) {
+    fetch(`/api/pins/${pinId}`, { method: 'DELETE' })
+      .then(() => loadPins(topicId));
+  }
+
+  function deleteTopic(topicId) {
+    if (!confirm('Delete this topic and all its pins?')) return;
+    fetch(`/api/topics/${topicId}`, { method: 'DELETE' })
+      .then(() => document.getElementById(`topic-${topicId}`).remove());
+  }
+
+  function addTopic() {
+    const name = document.getElementById('newName').value.trim();
+    const query = document.getElementById('newQuery').value.trim() || name;
+    if (!name) return;
+    fetch('/api/topics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, search_query: query })
+    }).then(() => window.location.reload());
+  }
+</script>
+{% endblock %}

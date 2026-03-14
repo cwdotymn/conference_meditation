@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}New Session — Conference Meditation{% endblock %}
+{% block content %}
+<div class="setup-page">
+  <h2 class="page-title">Configure Session</h2>
+
+  <form method="POST" action="{{ url_for('new_session') }}" id="sessionForm">
+
+    <!-- Topic Selection -->
+    <section class="setup-section">
+      <label class="setup-label">Topic / Filter</label>
+      <div class="topic-grid" id="topicGrid">
+        {% for topic in topics %}
+        <label class="topic-card">
+          <input type="radio" name="topic_id" value="{{ topic.id }}"
+            {% if loop.first %}checked{% endif %}
+            onchange="onTopicChange({{ topic.id }}, '{{ topic.name }}', '{{ topic.search_query }}')">
+          <span class="topic-card-name">{{ topic.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- Pomodoro Config -->
+    <section class="setup-section">
+      <label class="setup-label">Pomodoro Timer</label>
+      <div class="timer-config">
+        <div class="timer-field">
+          <label class="timer-label">Work</label>
+          <div class="timer-input-wrap">
+            <input type="number" name="work_minutes" id="workMin" value="25" min="1" max="120" class="timer-input">
+            <span class="timer-unit">min</span>
+          </div>
+        </div>
+        <div class="timer-divider">×</div>
+        <div class="timer-field">
+          <label class="timer-label">Rounds</label>
+          <div class="timer-input-wrap">
+            <input type="number" name="rounds" id="rounds" value="4" min="1" max="12" class="timer-input">
+          </div>
+        </div>
+        <div class="timer-divider">+</div>
+        <div class="timer-field">
+          <label class="timer-label">Break</label>
+          <div class="timer-input-wrap">
+            <input type="number" name="break_minutes" id="breakMin" value="5" min="1" max="30" class="timer-input">
+            <span class="timer-unit">min</span>
+          </div>
+        </div>
+      </div>
+      <p class="timer-summary" id="timerSummary"></p>
+    </section>
+
+    <!-- Video Selection -->
+    <section class="setup-section">
+      <label class="setup-label">Video</label>
+
+      <!-- Pinned Videos -->
+      <div id="pinnedSection">
+        <p class="subsection-label">Pinned for this topic</p>
+        <div class="video-list" id="pinnedList">
+          <p class="empty-hint">Loading...</p>
+        </div>
+      </div>
+
+      <!-- YouTube Search -->
+      <div class="yt-search-wrap">
+        <p class="subsection-label">Search YouTube</p>
+        <div class="search-row">
+          <input type="text" id="ytQuery" class="search-input" placeholder="Search videos...">
+          <button type="button" class="btn btn-sm" onclick="searchYT()">Search</button>
+        </div>
+        <div class="video-list" id="searchResults"></div>
+        <p class="api-hint" id="apiHint"></p>
+      </div>
+
+      <!-- Pin a URL manually -->
+      <div class="pin-wrap">
+        <p class="subsection-label">Pin a YouTube URL</p>
+        <div class="pin-row">
+          <input type="text" id="pinUrl" class="search-input" placeholder="https://youtube.com/watch?v=...">
+          <input type="text" id="pinTitle" class="search-input" placeholder="Title (optional)">
+          <button type="button" class="btn btn-sm" onclick="pinVideo()">Pin</button>
+        </div>
+      </div>
+
+      <!-- Hidden fields for selected video -->
+      <input type="hidden" name="video_id" id="selectedVideoId">
+      <input type="hidden" name="video_title" id="selectedVideoTitle">
+
+      <div class="selected-video" id="selectedPreview" style="display:none">
+        <span class="selected-label">Selected:</span>
+        <span id="selectedName" class="selected-name"></span>
+        <button type="button" class="clear-btn" onclick="clearVideo()">✕</button>
+      </div>
+    </section>
+
+    <div class="setup-footer">
+      <button type="submit" class="btn btn-primary btn-lg" id="startBtn">Enter Focus Chamber →</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentTopicId = {{ topics[0].id if topics else 'null' }};
+  let currentSearchQuery = '{{ topics[0].search_query if topics else "" }}';
+
+  // Pre-select topic from query param if present
+  const params = new URLSearchParams(window.location.search);
+  const preTopicId = params.get('topic_id');
+
+  function onTopicChange(id, name, query) {
+    currentTopicId = id;
+    currentSearchQuery = query;
+    document.getElementById('ytQuery').placeholder = `Search: ${name}`;
+    loadPins(id);
+  }
+
+  function loadPins(topicId) {
+    fetch(`/api/topics/${topicId}/pins`)
+      .then(r => r.json())
+      .then(pins => {
+        const el = document.getElementById('pinnedList');
+        if (pins.length === 0) {
+          el.innerHTML = '<p class="empty-hint">No pinned videos for this topic yet.</p>';
+          return;
+        }
+        el.innerHTML = pins.map(p => videoCard(p.video_id, p.title, '', p.id, true)).join('');
+      });
+  }
+
+  function searchYT() {
+    const q = document.getElementById('ytQuery').value || currentSearchQuery;
+    const hint = document.getElementById('apiHint');
+    const results = document.getElementById('searchResults');
+    results.innerHTML = '<p class="empty-hint">Searching...</p>';
+    fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          hint.textContent = data.error.includes('No YouTube API key')
+            ? 'Set YOUTUBE_API_KEY env var to enable search. Use pinned URLs in the meantime.'
+            : `Error: ${data.error}`;
+          results.innerHTML = '';
+          return;
+        }
+        hint.textContent = '';
+        if (data.items.length === 0) {
+          results.innerHTML = '<p class="empty-hint">No results.</p>';
+          return;
+        }
+        results.innerHTML = data.items.map(v => videoCard(v.video_id, v.title, v.channel)).join('');
+      });
+  }
+
+  function videoCard(videoId, title, channel, pinId = null, isPinned = false) {
+    const thumb = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    const pinBtn = isPinned
+      ? `<button type="button" class="card-action unpin-btn" onclick="unpin(${pinId}, event)">unpin</button>`
+      : `<button type="button" class="card-action pin-btn" onclick="pinFromSearch('${videoId}', \`${title.replace(/`/g, '')}\`, event)">pin</button>`;
+    return `
+      <div class="video-card" onclick="selectVideo('${videoId}', \`${title.replace(/`/g, '')}\`)" data-vid="${videoId}">
+        <img src="${thumb}" class="video-thumb" alt="">
+        <div class="video-info">
+          <p class="video-title">${title}</p>
+          ${channel ? `<p class="video-channel">${channel}</p>` : ''}
+        </div>
+        ${pinBtn}
+      </div>`;
+  }
+
+  function selectVideo(videoId, title) {
+    document.getElementById('selectedVideoId').value = videoId;
+    document.getElementById('selectedVideoTitle').value = title;
+    document.getElementById('selectedName').textContent = title;
+    document.getElementById('selectedPreview').style.display = 'flex';
+    document.querySelectorAll('.video-card').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll(`[data-vid="${videoId}"]`).forEach(c => c.classList.add('selected'));
+  }
+
+  function clearVideo() {
+    document.getElementById('selectedVideoId').value = '';
+    document.getElementById('selectedVideoTitle').value = '';
+    document.getElementById('selectedPreview').style.display = 'none';
+    document.querySelectorAll('.video-card').forEach(c => c.classList.remove('selected'));
+  }
+
+  function pinFromSearch(videoId, title, evt) {
+    evt.stopPropagation();
+    fetch(`/api/topics/${currentTopicId}/pins`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: `https://www.youtube.com/watch?v=${videoId}`, title })
+    }).then(() => loadPins(currentTopicId));
+  }
+
+  function pinVideo() {
+    const url = document.getElementById('pinUrl').value.trim();
+    const title = document.getElementById('pinTitle').value.trim() || 'Pinned Video';
+    if (!url) return;
+    fetch(`/api/topics/${currentTopicId}/pins`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title })
+    }).then(() => {
+      loadPins(currentTopicId);
+      document.getElementById('pinUrl').value = '';
+      document.getElementById('pinTitle').value = '';
+    });
+  }
+
+  function unpin(pinId, evt) {
+    evt.stopPropagation();
+    fetch(`/api/pins/${pinId}`, { method: 'DELETE' })
+      .then(() => loadPins(currentTopicId));
+  }
+
+  function updateTimerSummary() {
+    const work = parseInt(document.getElementById('workMin').value) || 25;
+    const brk = parseInt(document.getElementById('breakMin').value) || 5;
+    const rounds = parseInt(document.getElementById('rounds').value) || 4;
+    const total = (work * rounds) + (brk * (rounds - 1));
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    const totalStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    document.getElementById('timerSummary').textContent =
+      `${rounds} rounds × ${work} min work + ${brk} min break = ${totalStr} total`;
+  }
+
+  document.getElementById('workMin').addEventListener('input', updateTimerSummary);
+  document.getElementById('breakMin').addEventListener('input', updateTimerSummary);
+  document.getElementById('rounds').addEventListener('input', updateTimerSummary);
+
+  // Init
+  window.addEventListener('DOMContentLoaded', () => {
+    updateTimerSummary();
+
+    // If a topic was pre-selected via URL param
+    if (preTopicId) {
+      const radio = document.querySelector(`input[name="topic_id"][value="${preTopicId}"]`);
+      if (radio) {
+        radio.checked = true;
+        const card = radio.closest('.topic-card');
+        currentTopicId = parseInt(preTopicId);
+      }
+    }
+
+    loadPins(currentTopicId);
+  });
+</script>
+{% endblock %}

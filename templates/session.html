@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Focus — {{ session.topic_name }}{% endblock %}
+{% block content %}
+<div class="chamber" id="chamber">
+
+  <div class="pomo-bar">
+    <div class="pomo-left">
+      <span class="pomo-topic">{{ session.topic_name }}</span>
+      <span class="pomo-round" id="roundLabel">Round 1 / {{ session.rounds }}</span>
+    </div>
+    <div class="pomo-center">
+      <div class="pomo-phase" id="phaseLabel">WORK</div>
+      <div class="pomo-clock" id="clock">{{ '%02d' % session.work_minutes }}:00</div>
+      <div class="pomo-controls">
+        <button class="pomo-btn" id="startPauseBtn" onclick="toggleTimer()">▶ Start</button>
+        <button class="pomo-btn pomo-btn-ghost" onclick="resetTimer()">↺ Reset</button>
+      </div>
+    </div>
+    <div class="pomo-right">
+      <div class="round-dots" id="roundDots">
+        {% for i in range(session.rounds) %}
+        <span class="round-dot" id="dot-{{ i }}"></span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="chamber-body">
+    <div class="video-panel">
+      {% if session.video_id %}
+      <div class="yt-wrap">
+        <iframe id="ytPlayer"
+          src="https://www.youtube.com/embed/{{ session.video_id }}?autoplay=0&rel=0&modestbranding=1"
+          allow="autoplay; encrypted-media" allowfullscreen class="yt-frame"></iframe>
+      </div>
+      {% if session.video_title %}
+      <p class="video-playing-title">{{ session.video_title }}</p>
+      {% endif %}
+      {% else %}
+      <div class="no-video">
+        <p class="no-video-label">Timer-only mode</p>
+        <p class="no-video-hint">No video selected. <a href="{{ url_for('new_session') }}">Start a new session</a> to pick one.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="notes-panel">
+      <div class="notes-header">
+        <span class="notes-label">Notes</span>
+        <span class="notes-hint">Ctrl+Enter to save</span>
+      </div>
+      <textarea id="noteArea" class="note-area"
+        placeholder="Type your thoughts... ideas, observations, whatever surfaces."
+        onkeydown="handleNoteKey(event)"></textarea>
+      <button class="btn btn-sm save-note-btn" onclick="saveNote()">Save Note ↵</button>
+      <div class="saved-notes" id="savedNotes">
+        {% for note in notes %}
+        <div class="saved-note">
+          <span class="note-time">{{ fmt_clock(note.created_at) }}</span>
+          <span class="note-text">{{ note.content }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="break-overlay" id="breakOverlay" style="display:none">
+    <div class="break-content">
+      <div class="break-glyph">◇</div>
+      <h2 class="break-title">Break Time</h2>
+      <p class="break-sub">Step away. Breathe. Let it percolate.</p>
+      <div class="pomo-clock break-clock" id="breakClock">{{ '%02d' % session.break_minutes }}:00</div>
+      <button class="btn btn-primary" onclick="skipBreak()">Skip Break →</button>
+    </div>
+  </div>
+
+  <div class="break-overlay" id="doneOverlay" style="display:none">
+    <div class="break-content">
+      <div class="break-glyph">✦</div>
+      <h2 class="break-title">Session Complete</h2>
+      <p class="break-sub">{{ session.rounds }} round{% if session.rounds != 1 %}s{% endif %}. Well done.</p>
+      <div class="done-actions">
+        <a href="{{ url_for('history') }}" class="btn btn-primary">View Notes</a>
+        <a href="{{ url_for('new_session') }}" class="btn btn-ghost">New Session</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SESSION_ID   = {{ session.id }};
+  const WORK_SEC     = {{ session.work_minutes }} * 60;
+  const BREAK_SEC    = {{ session.break_minutes }} * 60;
+  const TOTAL_ROUNDS = {{ session.rounds }};
+
+  let currentRound = 0, phase = 'work', remaining = WORK_SEC;
+  let running = false, interval = null, audioCtx = null;
+
+  function getAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+  function playBell(freq = 528, duration = 1.4) {
+    try {
+      const ctx = getAudioCtx(), osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq; osc.type = 'sine';
+      gain.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + duration);
+    } catch(e) {}
+  }
+  function formatTime(sec) {
+    return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`;
+  }
+  function updateClock() { document.getElementById('clock').textContent = formatTime(remaining); }
+
+  function toggleTimer() {
+    if (running) {
+      clearInterval(interval); running = false;
+      document.getElementById('startPauseBtn').textContent = '▶ Resume';
+    } else {
+      running = true; getAudioCtx();
+      document.getElementById('startPauseBtn').textContent = '⏸ Pause';
+      interval = setInterval(tick, 1000);
+    }
+  }
+  function tick() {
+    remaining--;
+    if (phase === 'work') updateClock();
+    else document.getElementById('breakClock').textContent = formatTime(remaining);
+    if (remaining <= 0) {
+      clearInterval(interval); running = false; playBell();
+      if (phase === 'work') {
+        document.getElementById(`dot-${currentRound}`).classList.add('done');
+        currentRound++;
+        if (currentRound >= TOTAL_ROUNDS) finishSession(); else startBreak();
+      } else { endBreak(); }
+    }
+  }
+  function startBreak() {
+    phase = 'break'; remaining = BREAK_SEC;
+    document.getElementById('breakClock').textContent = formatTime(remaining);
+    document.getElementById('phaseLabel').textContent = 'BREAK';
+    document.getElementById('breakOverlay').style.display = 'flex';
+    running = true; interval = setInterval(tick, 1000);
+  }
+  function skipBreak() { clearInterval(interval); running = false; endBreak(); }
+  function endBreak() {
+    phase = 'work'; remaining = WORK_SEC;
+    document.getElementById('breakOverlay').style.display = 'none';
+    document.getElementById('phaseLabel').textContent = 'WORK';
+    document.getElementById('roundLabel').textContent  = `Round ${currentRound + 1} / ${TOTAL_ROUNDS}`;
+    updateClock();
+    document.getElementById('startPauseBtn').textContent = '▶ Start';
+  }
+  function resetTimer() {
+    clearInterval(interval); running = false;
+    currentRound = 0; phase = 'work'; remaining = WORK_SEC;
+    updateClock();
+    document.getElementById('startPauseBtn').textContent = '▶ Start';
+    document.getElementById('roundLabel').textContent    = `Round 1 / ${TOTAL_ROUNDS}`;
+    document.getElementById('phaseLabel').textContent    = 'WORK';
+    document.querySelectorAll('.round-dot').forEach(d => d.classList.remove('done'));
+    document.getElementById('breakOverlay').style.display = 'none';
+  }
+  function finishSession() {
+    fetch(`/api/sessions/${SESSION_ID}/complete`, { method: 'POST' });
+    document.getElementById('doneOverlay').style.display = 'flex';
+    playBell(440, 1.5);
+    setTimeout(() => playBell(528, 2), 500);
+    setTimeout(() => playBell(660, 2), 1000);
+  }
+
+  function handleNoteKey(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); saveNote(); }
+  }
+  function saveNote() {
+    const area = document.getElementById('noteArea');
+    const content = area.value.trim();
+    if (!content) return;
+    fetch(`/api/sessions/${SESSION_ID}/notes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    }).then(r => r.json()).then(note => {
+      const now = new Date(note.created_at.replace(' ', 'T') + 'Z');
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const container = document.getElementById('savedNotes');
+      const div = document.createElement('div');
+      div.className = 'saved-note new';
+      div.innerHTML = `<span class="note-time">${timeStr}</span><span class="note-text">${escHtml(content)}</span>`;
+      container.prepend(div);
+      area.value = '';
+      setTimeout(() => div.classList.remove('new'), 600);
+    });
+  }
+  function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+{% endblock %}

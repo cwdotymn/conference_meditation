@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}History — Conference Meditation{% endblock %}
+{% block content %}
+<div class="history-page">
+  <div class="page-header">
+    <h2 class="page-title">Session History</h2>
+  </div>
+  {% if sessions %}
+  <div class="session-list">
+    {% for s in sessions %}
+    <div class="session-card {% if s.completed_at %}completed{% endif %}">
+      <div class="session-card-header">
+        <span class="session-topic">{{ s.topic_name }}</span>
+        <span class="session-date">{{ s.started_fmt }}</span>
+        {% if s.completed_at %}
+        <span class="session-badge">✓ complete</span>
+        {% else %}
+        <span class="session-badge partial">partial</span>
+        {% endif %}
+      </div>
+      <div class="session-meta">
+        {{ s.rounds }} rounds · {{ s.work_minutes }}m work · {{ s.break_minutes }}m break
+        {% if s.video_title %} · <em>{{ s.video_title }}</em>{% endif %}
+      </div>
+      {% if s.notes %}
+      <div class="session-notes">
+        {% for note in s.notes %}
+        <div class="history-note">
+          <span class="note-time">{{ fmt_clock(note.created_at) }}</span>
+          <span class="note-text">{{ note.content }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty-hint">No notes saved this session.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-hint">No sessions yet. <a href="{{ url_for('new_session') }}">Start one →</a></p>
+  {% endif %}
+</div>
+{% endblock %}

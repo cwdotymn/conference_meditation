@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Conference Meditation — Focus Chamber{% endblock %}
+{% block content %}
+<div class="home">
+  <div class="home-hero">
+    <div class="hero-glyph">⬡</div>
+    <h1 class="hero-title">Conference<br><em>Meditation</em></h1>
+    <p class="hero-sub">An immersive focus chamber for conference-mode thinking.<br>Pick a topic. Set your timer. Let your mind wander.</p>
+    <div class="hero-actions">
+      <a href="{{ url_for('new_session') }}" class="btn btn-primary">Begin Session</a>
+      <a href="{{ url_for('topics') }}" class="btn btn-ghost">Manage Topics</a>
+    </div>
+  </div>
+
+  <div class="home-topics">
+    <p class="section-label">Active Topics</p>
+    <div class="topic-chips">
+      {% for topic in topics %}
+      <a href="{{ url_for('new_session') }}?topic_id={{ topic.id }}" class="topic-chip">{{ topic.name }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
