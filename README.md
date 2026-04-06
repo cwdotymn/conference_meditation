@@ -3,6 +3,14 @@
 An immersive focus chamber for conference-mode thinking.
 Pick a topic. Set your timer. Let your mind wander.
 
+## Screenshots
+
+| Home | New Session |
+|:---:|:---:|
+| <img src="screenshots/home.png" width="400"> | <img src="screenshots/new_session.png" width="400"> |
+| **Topics** | **History** |
+| <img src="screenshots/topics.png" width="400"> | <img src="screenshots/history.png" width="400"> |
+
 ## Setup
 
 ```bash
