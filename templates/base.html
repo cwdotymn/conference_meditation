@@ -16,7 +16,14 @@
       <a href="{{ url_for('new_session') }}" class="nav-link {% if request.endpoint == 'new_session' %}active{% endif %}">New Session</a>
       <a href="{{ url_for('topics') }}" class="nav-link {% if request.endpoint == 'topics' %}active{% endif %}">Topics</a>
       <a href="{{ url_for('history') }}" class="nav-link {% if request.endpoint == 'history' %}active{% endif %}">History</a>
-    </div>
+      <a href="{{ url_for('new_session') }}" class="nav-link">New Session</a>
+      <a href="{{ url_for('topics') }}" class="nav-link">Topics</a>
+      <a href="{{ url_for('history') }}" class="nav-link">History</a>
+      {% if session.user %}
+      <span class="nav-user">{{ session.user.email }}</span>
+      <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
+      {% endif %}
+        </div>
   </nav>
   <main class="main">
     {% block content %}{% endblock %}

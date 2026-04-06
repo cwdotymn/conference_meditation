@@ -1,4 +1,7 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import session as flask_session
+from authlib.integrations.flask_client import OAuth
+from functools import wraps
 from database import get_db, init_db
 from datetime import datetime, timezone
 import os
@@ -10,17 +13,37 @@ import json as json_lib
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'conference-meditation-secret'
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+oauth = OAuth(app)
+authentik = oauth.register(
+    name='authentik',
+    client_id='HuU82ZQa3lGoxaIhrXCsdJhWOFmEgR5NUk12c6ZG',
+    client_secret='8kqa0JEjFkcrbSV8OxW8qZdADWq00bhM4uZMiqEqXiieXdGgzML3mnPpaBoGFqkI9jPBx6XX6uCxibOezdwxIv5S3GdMwBdJ0aMBKBybXERJ69HhKn1N4AnazlKwdJ3b',
+    server_metadata_url='http://localhost:9000/application/o/conference-meditation/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'},
+)
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user' not in flask_session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+# ── Database ──────────────────────────────────────────────────────────────────
+
 init_db()
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def extract_video_id(url):
     match = re.search(r'(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})', url)
     return match.group(1) if match else ''
 
-
 def utcnow():
     return datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-
 
 def fmt_time(iso_str):
     if not iso_str:
@@ -31,7 +54,6 @@ def fmt_time(iso_str):
     except Exception:
         return iso_str
 
-
 def fmt_clock(iso_str):
     if not iso_str:
         return ''
@@ -41,22 +63,45 @@ def fmt_clock(iso_str):
     except Exception:
         return ''
 
+# ── Auth Routes ───────────────────────────────────────────────────────────────
+
+@app.route('/login')
+def login():
+    redirect_uri = url_for('auth_callback', _external=True)
+    return authentik.authorize_redirect(redirect_uri)
+
+@app.route('/auth/callback')
+def auth_callback():
+    token = authentik.authorize_access_token()
+    user = token['userinfo']
+    flask_session['user'] = user
+    return redirect(url_for('index'))
+
+@app.route('/logout')
+def logout():
+    flask_session.pop('user', None)
+    return redirect('http://localhost:9000/application/o/conference-meditation/end-session/')
+
+# ── Home ──────────────────────────────────────────────────────────────────────
 
 @app.route('/')
+@login_required
 def index():
     with get_db() as conn:
         topics = conn.execute("SELECT * FROM topics ORDER BY name").fetchall()
     return render_template('index.html', topics=topics)
 
+# ── Topics ────────────────────────────────────────────────────────────────────
 
 @app.route('/topics')
+@login_required
 def topics():
     with get_db() as conn:
         topics = conn.execute("SELECT * FROM topics ORDER BY name").fetchall()
     return render_template('topics.html', topics=topics)
 
-
 @app.route('/api/topics', methods=['POST'])
+@login_required
 def create_topic():
     data = request.json
     with get_db() as conn:
@@ -67,16 +112,18 @@ def create_topic():
         conn.commit()
     return jsonify({'id': cur.lastrowid, 'name': data['name']})
 
-
 @app.route('/api/topics/<int:topic_id>', methods=['DELETE'])
+@login_required
 def delete_topic(topic_id):
     with get_db() as conn:
         conn.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
         conn.commit()
     return jsonify({'ok': True})
 
+# ── Pinned Videos ─────────────────────────────────────────────────────────────
 
 @app.route('/api/topics/<int:topic_id>/pins', methods=['GET'])
+@login_required
 def get_pins(topic_id):
     with get_db() as conn:
         pins = conn.execute(
@@ -84,8 +131,8 @@ def get_pins(topic_id):
         ).fetchall()
     return jsonify([dict(p) for p in pins])
 
-
 @app.route('/api/topics/<int:topic_id>/pins', methods=['POST'])
+@login_required
 def add_pin(topic_id):
     data = request.json
     url = data['url']
@@ -98,16 +145,18 @@ def add_pin(topic_id):
         conn.commit()
     return jsonify({'id': cur.lastrowid, 'video_id': video_id})
 
-
 @app.route('/api/pins/<int:pin_id>', methods=['DELETE'])
+@login_required
 def delete_pin(pin_id):
     with get_db() as conn:
         conn.execute("DELETE FROM pinned_videos WHERE id = ?", (pin_id,))
         conn.commit()
     return jsonify({'ok': True})
 
+# ── Session ───────────────────────────────────────────────────────────────────
 
 @app.route('/session/new', methods=['GET', 'POST'])
+@login_required
 def new_session():
     if request.method == 'POST':
         data = request.form
@@ -135,8 +184,8 @@ def new_session():
     pre_topic = request.args.get('topic_id')
     return render_template('new_session.html', topics=topics, pre_topic=pre_topic)
 
-
 @app.route('/session/<int:session_id>')
+@login_required
 def focus_session(session_id):
     with get_db() as conn:
         session = conn.execute(
@@ -154,8 +203,8 @@ def focus_session(session_id):
                            notes=[dict(n) for n in notes],
                            fmt_clock=fmt_clock)
 
-
 @app.route('/api/sessions/<int:session_id>/complete', methods=['POST'])
+@login_required
 def complete_session(session_id):
     with get_db() as conn:
         conn.execute(
@@ -165,8 +214,10 @@ def complete_session(session_id):
         conn.commit()
     return jsonify({'ok': True})
 
+# ── Notes ─────────────────────────────────────────────────────────────────────
 
 @app.route('/api/sessions/<int:session_id>/notes', methods=['POST'])
+@login_required
 def save_note(session_id):
     data = request.json
     ts = utcnow()
@@ -178,8 +229,10 @@ def save_note(session_id):
         conn.commit()
     return jsonify({'id': cur.lastrowid, 'created_at': ts})
 
+# ── History ───────────────────────────────────────────────────────────────────
 
 @app.route('/history')
+@login_required
 def history():
     with get_db() as conn:
         sessions = conn.execute(
@@ -199,8 +252,10 @@ def history():
             session_list.append(s_dict)
     return render_template('history.html', sessions=session_list, fmt_clock=fmt_clock)
 
+# ── YouTube Search ────────────────────────────────────────────────────────────
 
 @app.route('/api/youtube/search')
+@login_required
 def youtube_search():
     query = request.args.get('q', '')
     api_key = os.environ.get('YOUTUBE_API_KEY', '')
@@ -226,6 +281,10 @@ def youtube_search():
     except Exception as e:
         return jsonify({'error': str(e), 'items': []})
 
+@app.route('/debug/user')
+def debug_user():
+    return jsonify(dict(flask_session.get('user', {})))
 
 if __name__ == '__main__':
     app.run(debug=True)
+

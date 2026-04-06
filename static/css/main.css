@@ -55,6 +55,12 @@ a:hover { text-decoration: underline; }
   z-index: 100;
 }
 
+.nav-user {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
 .nav-logo {
   font-family: var(--font-mono);
   font-size: 0.85rem;
