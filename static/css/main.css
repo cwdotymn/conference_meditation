@@ -225,6 +225,13 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--border);
 }
 
+.setup-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
 .setup-label {
   display: block;
   font-family: var(--font-mono);
@@ -232,7 +239,29 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--amber);
-  margin-bottom: 1rem;
+  margin-bottom: 0;
+}
+
+.setup-label-row .setup-label { margin-bottom: 0; }
+
+.setup-adjust {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+.setup-adjust:hover { color: var(--text-dim); }
+
+.setup-optional {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
 }
 
 /* Topic grid */

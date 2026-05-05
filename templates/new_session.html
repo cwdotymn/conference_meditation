@@ -2,13 +2,13 @@
 {% block title %}New Session — Conference Meditation{% endblock %}
 {% block content %}
 <div class="setup-page">
-  <h2 class="page-title">Configure Session</h2>
+  <h2 class="page-title">New Session</h2>
 
   <form method="POST" action="{{ url_for('new_session') }}" id="sessionForm">
 
-    <!-- Topic Selection -->
+    <!-- Topic -->
     <section class="setup-section">
-      <label class="setup-label">Topic / Filter</label>
+      <label class="setup-label">Topic</label>
       <div class="topic-grid" id="topicGrid">
         {% for topic in topics %}
         <label class="topic-card">
@@ -21,10 +21,14 @@
       </div>
     </section>
 
-    <!-- Pomodoro Config -->
+    <!-- Timer (collapsed by default) -->
     <section class="setup-section">
-      <label class="setup-label">Pomodoro Timer</label>
-      <div class="timer-config">
+      <div class="setup-label-row">
+        <label class="setup-label">Timer</label>
+        <button type="button" class="setup-adjust" id="timerToggle" onclick="toggleTimer()">adjust</button>
+      </div>
+      <p class="timer-summary" id="timerSummary"></p>
+      <div class="timer-config" id="timerConfig" style="display:none; margin-top:1rem">
         <div class="timer-field">
           <label class="timer-label">Work</label>
           <div class="timer-input-wrap">
@@ -48,43 +52,29 @@
           </div>
         </div>
       </div>
-      <p class="timer-summary" id="timerSummary"></p>
     </section>
 
-    <!-- Video Selection -->
+    <!-- Video -->
     <section class="setup-section">
-      <label class="setup-label">Video</label>
+      <div class="setup-label-row">
+        <label class="setup-label">Video</label>
+        <span class="setup-optional">optional</span>
+      </div>
 
-      <!-- Pinned Videos -->
-      <div id="pinnedSection">
-        <p class="subsection-label">Pinned for this topic</p>
+      <div class="search-row">
+        <input type="text" id="ytQuery" class="search-input" placeholder="search YouTube...">
+        <button type="button" class="btn btn-sm" onclick="searchYT()">Search</button>
+      </div>
+      <p class="api-hint" id="apiHint"></p>
+      <div class="video-list" id="searchResults"></div>
+
+      <div id="pinnedSection" style="margin-top:0.75rem">
+        <p class="subsection-label" id="pinnedLabel">pinned</p>
         <div class="video-list" id="pinnedList">
           <p class="empty-hint">Loading...</p>
         </div>
       </div>
 
-      <!-- YouTube Search -->
-      <div class="yt-search-wrap">
-        <p class="subsection-label">Search YouTube</p>
-        <div class="search-row">
-          <input type="text" id="ytQuery" class="search-input" placeholder="Search videos...">
-          <button type="button" class="btn btn-sm" onclick="searchYT()">Search</button>
-        </div>
-        <div class="video-list" id="searchResults"></div>
-        <p class="api-hint" id="apiHint"></p>
-      </div>
-
-      <!-- Pin a URL manually -->
-      <div class="pin-wrap">
-        <p class="subsection-label">Pin a YouTube URL</p>
-        <div class="pin-row">
-          <input type="text" id="pinUrl" class="search-input" placeholder="https://youtube.com/watch?v=...">
-          <input type="text" id="pinTitle" class="search-input" placeholder="Title (optional)">
-          <button type="button" class="btn btn-sm" onclick="pinVideo()">Pin</button>
-        </div>
-      </div>
-
-      <!-- Hidden fields for selected video -->
       <input type="hidden" name="video_id" id="selectedVideoId">
       <input type="hidden" name="video_title" id="selectedVideoTitle">
 
@@ -96,7 +86,7 @@
     </section>
 
     <div class="setup-footer">
-      <button type="submit" class="btn btn-primary btn-lg" id="startBtn">Enter Focus Chamber →</button>
+      <button type="submit" class="btn btn-primary btn-lg">Enter Focus Chamber →</button>
     </div>
 
   </form>
@@ -107,16 +97,21 @@
 <script>
   let currentTopicId = {{ topics[0].id if topics else 'null' }};
   let currentSearchQuery = '{{ topics[0].search_query if topics else "" }}';
+  let timerOpen = false;
 
-  // Pre-select topic from query param if present
-  const params = new URLSearchParams(window.location.search);
-  const preTopicId = params.get('topic_id');
+  const preTopicId = new URLSearchParams(window.location.search).get('topic_id');
 
   function onTopicChange(id, name, query) {
     currentTopicId = id;
     currentSearchQuery = query;
-    document.getElementById('ytQuery').placeholder = `Search: ${name}`;
+    document.getElementById('ytQuery').placeholder = `search: ${name}`;
     loadPins(id);
+  }
+
+  function toggleTimer() {
+    timerOpen = !timerOpen;
+    document.getElementById('timerConfig').style.display = timerOpen ? 'flex' : 'none';
+    document.getElementById('timerToggle').textContent = timerOpen ? 'done' : 'adjust';
   }
 
   function loadPins(topicId) {
@@ -124,16 +119,19 @@
       .then(r => r.json())
       .then(pins => {
         const el = document.getElementById('pinnedList');
+        const label = document.getElementById('pinnedLabel');
         if (pins.length === 0) {
-          el.innerHTML = '<p class="empty-hint">No pinned videos for this topic yet.</p>';
-          return;
+          el.innerHTML = '<p class="empty-hint">No pinned videos for this topic.</p>';
+          label.style.display = 'none';
+        } else {
+          label.style.display = '';
+          el.innerHTML = pins.map(p => videoCard(p.video_id, p.title, '', p.id, true)).join('');
         }
-        el.innerHTML = pins.map(p => videoCard(p.video_id, p.title, '', p.id, true)).join('');
       });
   }
 
   function searchYT() {
-    const q = document.getElementById('ytQuery').value || currentSearchQuery;
+    const q = document.getElementById('ytQuery').value.trim() || currentSearchQuery;
     const hint = document.getElementById('apiHint');
     const results = document.getElementById('searchResults');
     results.innerHTML = '<p class="empty-hint">Searching...</p>';
@@ -142,27 +140,26 @@
       .then(data => {
         if (data.error) {
           hint.textContent = data.error.includes('No YouTube API key')
-            ? 'Set YOUTUBE_API_KEY env var to enable search. Use pinned URLs in the meantime.'
+            ? 'Set YOUTUBE_API_KEY to enable search. Use pinned videos in the meantime.'
             : `Error: ${data.error}`;
           results.innerHTML = '';
           return;
         }
         hint.textContent = '';
-        if (data.items.length === 0) {
-          results.innerHTML = '<p class="empty-hint">No results.</p>';
-          return;
-        }
-        results.innerHTML = data.items.map(v => videoCard(v.video_id, v.title, v.channel)).join('');
+        results.innerHTML = data.items.length
+          ? data.items.map(v => videoCard(v.video_id, v.title, v.channel)).join('')
+          : '<p class="empty-hint">No results.</p>';
       });
   }
 
   function videoCard(videoId, title, channel, pinId = null, isPinned = false) {
     const thumb = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    const safeTitle = title.replace(/`/g, '');
     const pinBtn = isPinned
-      ? `<button type="button" class="card-action unpin-btn" onclick="unpin(${pinId}, event)">unpin</button>`
-      : `<button type="button" class="card-action pin-btn" onclick="pinFromSearch('${videoId}', \`${title.replace(/`/g, '')}\`, event)">pin</button>`;
+      ? `<button type="button" class="card-action" onclick="unpin(${pinId}, event)">unpin</button>`
+      : `<button type="button" class="card-action" onclick="pinFromSearch('${videoId}', \`${safeTitle}\`, event)">pin</button>`;
     return `
-      <div class="video-card" onclick="selectVideo('${videoId}', \`${title.replace(/`/g, '')}\`)" data-vid="${videoId}">
+      <div class="video-card" onclick="selectVideo('${videoId}', \`${safeTitle}\`)" data-vid="${videoId}">
         <img src="${thumb}" class="video-thumb" alt="">
         <div class="video-info">
           <p class="video-title">${title}</p>
@@ -197,21 +194,6 @@
     }).then(() => loadPins(currentTopicId));
   }
 
-  function pinVideo() {
-    const url = document.getElementById('pinUrl').value.trim();
-    const title = document.getElementById('pinTitle').value.trim() || 'Pinned Video';
-    if (!url) return;
-    fetch(`/api/topics/${currentTopicId}/pins`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, title })
-    }).then(() => {
-      loadPins(currentTopicId);
-      document.getElementById('pinUrl').value = '';
-      document.getElementById('pinTitle').value = '';
-    });
-  }
-
   function unpin(pinId, evt) {
     evt.stopPropagation();
     fetch(`/api/pins/${pinId}`, { method: 'DELETE' })
@@ -227,24 +209,28 @@
     const m = total % 60;
     const totalStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
     document.getElementById('timerSummary').textContent =
-      `${rounds} rounds × ${work} min work + ${brk} min break = ${totalStr} total`;
+      `${rounds} × ${work} min work + ${brk} min break = ${totalStr}`;
   }
 
   document.getElementById('workMin').addEventListener('input', updateTimerSummary);
   document.getElementById('breakMin').addEventListener('input', updateTimerSummary);
   document.getElementById('rounds').addEventListener('input', updateTimerSummary);
 
-  // Init
+  document.getElementById('ytQuery').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); searchYT(); }
+  });
+
   window.addEventListener('DOMContentLoaded', () => {
     updateTimerSummary();
 
-    // If a topic was pre-selected via URL param
     if (preTopicId) {
       const radio = document.querySelector(`input[name="topic_id"][value="${preTopicId}"]`);
       if (radio) {
         radio.checked = true;
-        const card = radio.closest('.topic-card');
         currentTopicId = parseInt(preTopicId);
+        const label = radio.closest('.topic-card').querySelector('.topic-card-name');
+        currentSearchQuery = radio.closest('.topic-card')
+          .querySelector('input').getAttribute('onchange').match(/'([^']+)'\s*\)$/)?.[1] || '';
       }
     }
 
