@@ -4,23 +4,28 @@ from authlib.integrations.flask_client import OAuth
 from functools import wraps
 from database import get_db, init_db
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 import os
 import re
 import urllib.request
 import urllib.parse
 import json as json_lib
 
+load_dotenv()
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'conference-meditation-secret'
+app.config['SECRET_KEY'] = os.environ['SECRET_KEY']
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
+
+_authentik_base = os.environ['AUTHENTIK_BASE_URL'].rstrip('/')
 
 oauth = OAuth(app)
 authentik = oauth.register(
     name='authentik',
-    client_id='HuU82ZQa3lGoxaIhrXCsdJhWOFmEgR5NUk12c6ZG',
-    client_secret='8kqa0JEjFkcrbSV8OxW8qZdADWq00bhM4uZMiqEqXiieXdGgzML3mnPpaBoGFqkI9jPBx6XX6uCxibOezdwxIv5S3GdMwBdJ0aMBKBybXERJ69HhKn1N4AnazlKwdJ3b',
-    server_metadata_url='http://localhost:9000/application/o/conference-meditation/.well-known/openid-configuration',
+    client_id=os.environ['AUTHENTIK_CLIENT_ID'],
+    client_secret=os.environ['AUTHENTIK_CLIENT_SECRET'],
+    server_metadata_url=f'{_authentik_base}/application/o/conference-meditation/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'},
 )
 
@@ -80,7 +85,7 @@ def auth_callback():
 @app.route('/logout')
 def logout():
     flask_session.pop('user', None)
-    return redirect('http://localhost:9000/application/o/conference-meditation/end-session/')
+    return redirect(f'{_authentik_base}/application/o/conference-meditation/end-session/')
 
 # ── Home ──────────────────────────────────────────────────────────────────────
 
