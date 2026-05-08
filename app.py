@@ -18,15 +18,15 @@ app.config['SECRET_KEY'] = os.environ['SECRET_KEY']
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-_authentik_base = os.environ['AUTHENTIK_BASE_URL'].rstrip('/')
-
 oauth = OAuth(app)
-authentik = oauth.register(
-    name='authentik',
-    client_id=os.environ['AUTHENTIK_CLIENT_ID'],
-    client_secret=os.environ['AUTHENTIK_CLIENT_SECRET'],
-    server_metadata_url=f'{_authentik_base}/application/o/conference-meditation/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'},
+github = oauth.register(
+    name='github',
+    client_id=os.environ['GITHUB_CLIENT_ID'],
+    client_secret=os.environ['GITHUB_CLIENT_SECRET'],
+    access_token_url='https://github.com/login/oauth/access_token',
+    authorize_url='https://github.com/login/oauth/authorize',
+    api_base_url='https://api.github.com/',
+    client_kwargs={'scope': 'read:user'},
 )
 
 def login_required(f):
@@ -73,19 +73,23 @@ def fmt_clock(iso_str):
 @app.route('/login')
 def login():
     redirect_uri = url_for('auth_callback', _external=True)
-    return authentik.authorize_redirect(redirect_uri)
+    return github.authorize_redirect(redirect_uri)
 
 @app.route('/auth/callback')
 def auth_callback():
-    token = authentik.authorize_access_token()
-    user = token['userinfo']
-    flask_session['user'] = user
+    token = github.authorize_access_token()
+    resp = github.get('user', token=token)
+    user = resp.json()
+    flask_session['user'] = {
+        'login': user['login'],
+        'name': user.get('name') or user['login'],
+    }
     return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
     flask_session.pop('user', None)
-    return redirect(f'{_authentik_base}/application/o/conference-meditation/end-session/')
+    return redirect(url_for('index'))
 
 # ── Home ──────────────────────────────────────────────────────────────────────
 

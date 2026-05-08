@@ -17,7 +17,7 @@
       <a href="{{ url_for('topics') }}" class="nav-link {% if request.endpoint == 'topics' %}active{% endif %}">Topics</a>
       <a href="{{ url_for('history') }}" class="nav-link {% if request.endpoint == 'history' %}active{% endif %}">History</a>
       {% if session.user %}
-      <span class="nav-user">{{ session.user.email }}</span>
+      <span class="nav-user">{{ session.user.login }}</span>
       <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
       {% endif %}
         </div>
