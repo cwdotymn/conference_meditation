@@ -11,7 +11,7 @@ import urllib.request
 import urllib.parse
 import json as json_lib
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ['SECRET_KEY']
